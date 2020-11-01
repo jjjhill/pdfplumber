@@ -387,6 +387,7 @@ By default, `extract_tables` uses the page's vertical and horizontal lines (or r
     "text_x_tolerance": 3,
     "text_y_tolerance": 3,
     "text_*": …, # See below
+    "merged_cell_fullfill": False,
 }
 ```
 
