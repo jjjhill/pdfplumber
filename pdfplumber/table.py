@@ -371,9 +371,10 @@ class Row(CellGroup):
 
 
 class Table(object):
-    def __init__(self, page: "Page", cells: List[T_bbox]):
+    def __init__(self, page: "Page", settings: T_table_settings, cells: List[T_bbox]):
         self.page = page
         self.cells = cells
+        self.settings = settings
 
     @property
     def bbox(self) -> T_bbox:
@@ -417,7 +418,7 @@ class Table(object):
 
             for cell_index, cell in enumerate(row.cells):
                 if cell is None:
-                    if not merged_cell_fullfill:
+                    if not self.settings.merged_cell_fullfill:
                         cell_text = None
                     elif row_index == 0 and cell_index == 0:
                         print("Unexpected: row 0 and column 0 is None!!")
@@ -506,7 +507,7 @@ class TableSettings:
     intersection_x_tolerance: T_num = UNSET
     intersection_y_tolerance: T_num = UNSET
     text_settings: Optional[Dict[str, Any]] = None
-    merged_cell_fullfill: False
+    merged_cell_fullfill: bool = True
 
     def __post_init__(self) -> "TableSettings":
         """Clean up user-provided table settings.
@@ -603,7 +604,7 @@ class TableFinder(object):
         )
         self.cells = intersections_to_cells(self.intersections)
         self.tables = [
-            Table(self.page, cell_group) for cell_group in cells_to_tables(self.cells)
+            Table(self.page, self.settings, cell_group) for cell_group in cells_to_tables(self.cells)
         ]
 
     def get_edges(self) -> T_obj_list:
