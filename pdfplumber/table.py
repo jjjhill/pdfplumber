@@ -418,9 +418,7 @@ class Table(object):
 
             for cell_index, cell in enumerate(row.cells):
                 if cell is None:
-                    if not self.settings.merged_cell_fullfill:
-                        cell_text = None
-                    elif row_index == 0 and cell_index == 0:
+                    if row_index == 0 and cell_index == 0:
                         print("Unexpected: row 0 and column 0 is None!!")
                         cell_text = None
                     elif row_index == 0:
@@ -433,15 +431,16 @@ class Table(object):
                         left_cell = cell_arr[cell_index - 1]
                         up_cell = table_cell_arr[row_index - 1][cell_index]
                         # row merge, get from left
-                        if left_cell[2] >= up_cell[2]:
+                        if up_cell is None or left_cell[2] >= up_cell[2]:
                             cell = left_cell
                             cell_text = arr[cell_index - 1]
                         # column merge, get from left
-                        elif up_cell[3] >= left_cell[3]:
+                        elif left_cell is None or up_cell[3] >= left_cell[3]:
                             cell = up_cell
                             cell_text = table_arr[row_index - 1][cell_index]
                         else:
-                            cell_text = None
+                            cell = left_cell
+                            cell_text = arr[cell_index - 1]
                 else:
                     cell_chars = [
                         char for char in row_chars if char_in_bbox(char, cell)
