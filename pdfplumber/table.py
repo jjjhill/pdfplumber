@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from operator import itemgetter
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
+import pprint
+
+pp = pprint.PrettyPrinter(indent=4)
+
 from . import utils
 from ._typing import T_bbox, T_num, T_obj, T_obj_iter, T_obj_list, T_point
 
@@ -142,7 +146,7 @@ def words_to_edges_h(
 
 
 def words_to_edges_v(
-    words: T_obj_list, word_threshold: int = DEFAULT_MIN_WORDS_VERTICAL
+    words: T_obj_list, word_threshold: int = DEFAULT_MIN_WORDS_VERTICAL, word_attributes_to_cluster = None
 ) -> T_obj_list:
     """
     Find (imaginary) vertical lines that connect the left, right, or
@@ -156,7 +160,17 @@ def words_to_edges_v(
         return float(word["x0"] + word["x1"]) / 2
 
     by_center = utils.cluster_objects(words, get_center, 1)
-    clusters = by_x0 + by_x1 + by_center
+
+    clusters = []
+    if 'x0' in word_attributes_to_cluster:
+        clusters = clusters + by_x0
+    elif 'x1' in word_attributes_to_cluster:
+        clusters = clusters + by_x1
+    elif 'center' in word_attributes_to_cluster:
+        clusters = clusters + by_center
+    else:
+        clusters = by_x0 + by_x1 + by_center
+    
 
     # Find the points that align with the most words
     sorted_clusters = sorted(clusters, key=lambda x: -len(x))
@@ -164,7 +178,6 @@ def words_to_edges_v(
 
     # For each of those points, find the bboxes fitting all matching words
     bboxes = list(map(utils.objects_to_bbox, large_clusters))
-
     # Iterate through those bboxes, condensing overlapping bboxes
     condensed_bboxes: List[T_bbox] = []
     for bbox in bboxes:
@@ -182,7 +195,7 @@ def words_to_edges_v(
     min_top = min(map(itemgetter("top"), sorted_rects))
     max_bottom = max(map(itemgetter("bottom"), sorted_rects))
 
-    return [
+    ret = [
         {
             "x0": b["x0"],
             "x1": b["x0"],
@@ -192,17 +205,20 @@ def words_to_edges_v(
             "orientation": "v",
         }
         for b in sorted_rects
-    ] + [
-        {
-            "x0": max_x1,
-            "x1": max_x1,
-            "top": min_top,
-            "bottom": max_bottom,
-            "height": max_bottom - min_top,
-            "orientation": "v",
-        }
     ]
+    if word_attributes_to_cluster is None or 'x1' in word_attributes_to_cluster:
+        ret = ret + [
+            {
+                "x0": max_x1,
+                "x1": max_x1,
+                "top": min_top,
+                "bottom": max_bottom,
+                "height": max_bottom - min_top,
+                "orientation": "v",
+            }
+        ]
 
+    return ret
 
 def edges_to_intersections(
     edges: T_obj_list, x_tolerance: T_num = 1, y_tolerance: T_num = 1
@@ -463,7 +479,7 @@ class Table(object):
         return table_arr
 
 
-TABLE_STRATEGIES = ["lines", "lines_strict", "text", "explicit"]
+TABLE_STRATEGIES = ["lines", "lines_strict", "text", "explicit", "text_and_horizontal_line_vertices"]
 NON_NEGATIVE_SETTINGS = [
     "snap_tolerance",
     "snap_x_tolerance",
@@ -624,7 +640,7 @@ class TableFinder(object):
         v_strat = settings.vertical_strategy
         h_strat = settings.horizontal_strategy
 
-        if v_strat == "text" or h_strat == "text":
+        if "text" in v_strat or h_strat == "text":
             words = self.page.extract_words(**(settings.text_settings or {}))
 
         v_explicit = []
@@ -650,7 +666,9 @@ class TableFinder(object):
         elif v_strat == "lines_strict":
             v_base = utils.filter_edges(self.page.edges, "v", edge_type="line")
         elif v_strat == "text":
-            v_base = words_to_edges_v(words, word_threshold=settings.min_words_vertical)
+            v_base = words_to_edges_v(words, word_threshold=settings.min_words_vertical) 
+        elif v_strat == "text_and_horizontal_line_vertices":
+            v_base = horizontal_lines_to_vertical_edges(self.page.edges, words) 
         elif v_strat == "explicit":
             v_base = []
 
@@ -675,7 +693,7 @@ class TableFinder(object):
                 )
 
         if h_strat == "lines":
-            h_base = utils.filter_edges(self.page.edges, "h")
+            h_base = utils.filter_edges(self.page.edges, "h")  
         elif h_strat == "lines_strict":
             h_base = utils.filter_edges(self.page.edges, "h", edge_type="line")
         elif h_strat == "text":
@@ -687,7 +705,7 @@ class TableFinder(object):
 
         h = h_base + h_explicit
 
-        edges = list(v) + list(h)
+        edges = list(h) + list(v) 
 
         edges = merge_edges(
             edges,
@@ -698,3 +716,50 @@ class TableFinder(object):
         )
 
         return utils.filter_edges(edges, min_length=settings.edge_min_length)
+
+def horizontal_lines_to_vertical_edges(
+    edges: T_obj_list, words: T_obj_list
+):
+    """
+    Find (imaginary) vertical lines that connect the left and right
+    of at least `edge_threshold` horizontal lines.
+    """
+    # Find words that share the same left, right, or centerpoints
+    
+    horizontal_lines = filter(lambda x: x['orientation'] == 'h' and x['width'] > 20, edges)
+    sorted_lines = list(sorted(list(horizontal_lines), key=itemgetter("y0")))
+
+    min_x0 = min(list(map(itemgetter('x0'), sorted_lines)))
+    max_x1 = max(list(map(itemgetter('x1'), sorted_lines)))
+    min_top = min(list(map(itemgetter('top'), sorted_lines)))
+    max_bottom = max(list(map(itemgetter('top'), sorted_lines)))
+
+    word_edges = words_to_edges_v(words, word_threshold=int(len(list(sorted_lines)) * 0.8), word_attributes_to_cluster=['x0'])
+    
+    return [
+        {
+            "x0": min_x0,
+            "x1": min_x0,
+            "top": min_top,
+            "bottom": max_bottom,
+            "height": max_bottom - min_top,
+            "orientation": "v",
+        },
+        {
+            "x0": max_x1,
+            "x1": max_x1,
+            "top": min_top,
+            "bottom": max_bottom,
+            "height": max_bottom - min_top,
+            "orientation": "v",
+        }
+    ] + [
+    {
+        "x0": word_edge["x1"],
+        "x1": word_edge["x1"],
+        "top": word_edge["top"],
+        "bottom": word_edge["bottom"],
+        "height": word_edge["height"],
+        "orientation": word_edge["orientation"],
+    }
+    for word_edge in word_edges]
