@@ -433,11 +433,13 @@ class Table(object):
             row_chars = [char for char in chars if char_in_bbox(char, row.bbox)]
 
             for cell_index, cell in enumerate(row.cells):
-                cell_chars = [char for char in chars if char_in_bbox(char, cell)]
+                cell_chars=[]
+                if cell is not None:
+                    cell_chars = [char for char in chars if char_in_bbox(char, cell)]
+
                 if cell is None or len(cell_chars) == 0:
                     if row_index == 0 and cell_index == 0:
-                        print("Unexpected: row 0 and column 0 is None!!")
-                        cell_text = None
+                        cell_text = ''
                     elif row_index == 0:
                         cell = cell_arr[cell_index - 1]
                         cell_text = arr[cell_index - 1]
