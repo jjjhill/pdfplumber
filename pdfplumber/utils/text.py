@@ -3,12 +3,17 @@ import itertools
 import re
 import string
 from operator import itemgetter
+from functools import cmp_to_key
 from typing import Any, Dict, Generator, List, Match, Optional, Pattern, Tuple, Union
 
 from .._typing import T_num, T_obj, T_obj_iter, T_obj_list
 from .clustering import cluster_objects
 from .generic import to_list
 from .geometry import objects_to_bbox
+
+import pprint
+pp = pprint.PrettyPrinter(indent=2)
+
 
 DEFAULT_X_TOLERANCE = 3
 DEFAULT_Y_TOLERANCE = 3
@@ -471,6 +476,15 @@ class WordExtractor:
     def iter_sort_chars(self, chars: T_obj_iter) -> Generator[T_obj, None, None]:
         def upright_key(x: T_obj) -> int:
             return -int(x["upright"])
+        
+        def sort_subclusters(item1, item2):
+            x_diff = item1[0]['x0'] - item2[0]['x0']
+            y_diff = item2[0]['doctop'] - item1[0]['doctop']
+            
+            if abs(x_diff) > 5:
+                return x_diff
+            else:
+                return y_diff
 
         for upright_cluster in cluster_objects(list(chars), upright_key, 0):
             upright = upright_cluster[0]["upright"]
@@ -481,7 +495,12 @@ class WordExtractor:
                 upright_cluster, itemgetter(cluster_key), self.y_tolerance
             )
 
-            for sc in subclusters:
+            if not upright:
+                sorted_subclusters = sorted(subclusters, key=cmp_to_key(sort_subclusters))
+            else:
+                sorted_subclusters = subclusters
+
+            for sc in sorted_subclusters:
                 # Sort within line
                 sort_key = "x0" if upright else "doctop"
                 to_yield = sorted(sc, key=itemgetter(sort_key))
@@ -549,7 +568,9 @@ def extract_text(
             **{k: kwargs[k] for k in WORD_EXTRACTOR_KWARGS if k in kwargs}
         )
         words = extractor.extract_words(chars)
-        lines = cluster_objects(words, itemgetter("doctop"), y_tolerance)
+
+        cluster_key = "doctop" if words[0]['upright'] else "x0"
+        lines = cluster_objects(words, itemgetter(cluster_key), y_tolerance)
         return "\n".join(" ".join(word["text"] for word in line) for line in lines)
 
 
