@@ -525,7 +525,7 @@ class TableSettings:
     intersection_x_tolerance: T_num = UNSET
     intersection_y_tolerance: T_num = UNSET
     text_settings: Optional[Dict[str, Any]] = None
-    merged_cell_fullfill: bool = True
+    min_columns: T_num = 1
 
     def __post_init__(self) -> "TableSettings":
         """Clean up user-provided table settings.
@@ -612,6 +612,9 @@ class TableFinder(object):
     """
 
     def __init__(self, page: "Page", settings: Optional[T_table_settings] = None):
+        def get_max_columns(table):
+            return max(list(map(lambda row: len(row.cells), table.rows)))
+
         self.page = page
         self.settings = TableSettings.resolve(settings)
         self.edges = self.get_edges()
@@ -621,9 +624,10 @@ class TableFinder(object):
             self.settings.intersection_y_tolerance,
         )
         self.cells = intersections_to_cells(self.intersections)
-        self.tables = [
+        min_columns = settings.min_columns
+        self.tables = list(filter(lambda table: get_max_columns(table) >= min_columns, [
             Table(self.page, self.settings, cell_group) for cell_group in cells_to_tables(self.cells)
-        ]
+        ]))
 
     def get_edges(self) -> T_obj_list:
         settings = self.settings
