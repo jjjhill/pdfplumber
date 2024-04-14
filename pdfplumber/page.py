@@ -438,13 +438,14 @@ class Page(Container):
         self, table_settings: Optional[T_table_settings] = None
     ) -> List[Table]:
         tset = TableSettings.resolve(table_settings)
-        return TableFinder(self, tset).tables
+        tablefinder = TableFinder(self, tset)
+        return tablefinder.tables, tablefinder.edges
 
     def find_table(
         self, table_settings: Optional[T_table_settings] = None
     ) -> Optional[Table]:
         tset = TableSettings.resolve(table_settings)
-        tables = self.find_tables(tset)
+        tables, edges = self.find_tables(tset)
 
         if len(tables) == 0:
             return None
@@ -461,7 +462,7 @@ class Page(Container):
         self, table_settings: Optional[T_table_settings] = None
     ) -> List[List[List[Optional[str]]]]:
         tset = TableSettings.resolve(table_settings)
-        tables = self.find_tables(tset)
+        tables, edges = self.find_tables(tset)
         return [table.extract(**(tset.text_settings or {})) for table in tables]
 
     def extract_table(

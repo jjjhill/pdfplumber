@@ -146,7 +146,7 @@ def words_to_edges_h(
 
 
 def words_to_edges_v(
-    words: T_obj_list, word_threshold: int = DEFAULT_MIN_WORDS_VERTICAL, word_attributes_to_cluster = None
+    words: T_obj_list, word_threshold: int = DEFAULT_MIN_WORDS_VERTICAL, word_attributes_to_cluster = ['x0']
 ) -> T_obj_list:
     """
     Find (imaginary) vertical lines that connect the left, right, or
@@ -310,6 +310,17 @@ def intersections_to_cells(intersections: T_intersections) -> List[T_bbox]:
     return list(filter(None, cell_gen))
 
 
+def char_array_to_text(chars, bbox, **kwargs):
+    if len(chars):
+        kwargs["x_shift"] = bbox[0]
+        kwargs["y_shift"] = bbox[1]
+        if "layout" in kwargs:
+            kwargs["layout_width"] = bbox[2] - bbox[0]
+            kwargs["layout_height"] = bbox[3] - bbox[1]
+        return utils.extract_text(chars, **kwargs)
+    else:
+        return ""
+
 def cells_to_tables(cells: List[T_bbox]) -> List[List[T_bbox]]:
     """
     Given a list of bounding boxes (`cells`), return a list of tables that
@@ -414,7 +425,6 @@ class Table(object):
         return rows
 
     def extract(self, **kwargs: Any) -> List[List[Optional[str]]]:
-
         chars = self.page.chars
         table_arr = []
         table_cell_arr = []
@@ -432,50 +442,63 @@ class Table(object):
             cell_arr = []
             row_chars = [char for char in chars if char_in_bbox(char, row.bbox)]
 
+            num_cells_with_bboxes = len(list(filter(lambda cell: cell is not None, row.cells)))
+
+            # if len(num_cells_with_bboxes) == 1:
+            #     row_text = char_array_to_text(row_chars, row.bbox, **kwargs)
+            #     arr.append(row_text)
+            #     for cell_bbox in row.cells:
+            #         cell_arr.append(num_cells_with_bboxes[0])
+            # else:
             for cell_index, cell in enumerate(row.cells):
                 cell_chars=[]
                 if cell is not None:
                     cell_chars = [char for char in chars if char_in_bbox(char, cell)]
 
+                # This is to avoid interpreting a single-column row as a merged cell, as requested by client.
+                should_merge_cells = num_cells_with_bboxes > 1
+
                 if cell is None or len(cell_chars) == 0:
-                    if row_index == 0 and cell_index == 0:
-                        cell_text = ''
-                    elif row_index == 0:
-                        cell = cell_arr[cell_index - 1]
-                        cell_text = arr[cell_index - 1]
-                    elif cell_index == 0:
-                        cell = table_cell_arr[row_index - 1][cell_index]
-                        cell_text = table_arr[row_index - 1][cell_index]
-                    else:
-                        left_cell = cell_arr[cell_index - 1]
-                        up_cell = table_cell_arr[row_index - 1][cell_index]
-                        # row merge, get from left
-                        if up_cell is None or left_cell[2] >= up_cell[2]:
-                            cell = left_cell
+                    if should_merge_cells:
+                        if row_index == 0 and cell_index == 0:
+                            cell_text = ''
+                        elif row_index == 0:
+                            cell = cell_arr[cell_index - 1]
                             cell_text = arr[cell_index - 1]
-                        # column merge, get from left
-                        elif left_cell is None or up_cell[3] >= left_cell[3]:
-                            cell = up_cell
+                        elif cell_index == 0:
+                            cell = table_cell_arr[row_index - 1][cell_index]
                             cell_text = table_arr[row_index - 1][cell_index]
                         else:
-                            cell = left_cell
-                            cell_text = arr[cell_index - 1]
+                            left_cell = cell_arr[cell_index - 1]
+                            print(table_cell_arr)
+                            print(row_index)
+                            print(cell_index)
+                            up_cell = table_cell_arr[row_index - 1][cell_index]
+                            # row merge, get from left
+                            if left_cell is None and up_cell is None:
+                                cell_text = ''
+                            if up_cell is None or left_cell[2] >= up_cell[2]:
+                                cell = left_cell
+                                cell_text = arr[cell_index - 1]
+                            # column merge, get from left
+                            elif left_cell is None or up_cell[3] >= left_cell[3]:
+                                cell = up_cell
+                                cell_text = table_arr[row_index - 1][cell_index]
+                            else:
+                                cell = left_cell
+                                cell_text = arr[cell_index - 1]
+                    else:
+                        cell = None
+                        cell_text = ''  
                 else:
                     cell_chars = [
                         char for char in row_chars if char_in_bbox(char, cell)
                     ]
 
-                    if len(cell_chars):
-                        kwargs["x_shift"] = cell[0]
-                        kwargs["y_shift"] = cell[1]
-                        if "layout" in kwargs:
-                            kwargs["layout_width"] = cell[2] - cell[0]
-                            kwargs["layout_height"] = cell[3] - cell[1]
-                        cell_text = utils.extract_text(cell_chars, **kwargs)
-                    else:
-                        cell_text = ""
+                    cell_text = char_array_to_text(cell_chars, cell, **kwargs)
                 arr.append(cell_text)
                 cell_arr.append(cell)
+
             table_arr.append(arr)
             table_cell_arr.append(cell_arr)
 
@@ -712,7 +735,7 @@ class TableFinder(object):
 
         h = h_base + h_explicit
 
-        edges = list(h) + list(v) 
+        edges = list(h) + list(v)
 
         edges = merge_edges(
             edges,
@@ -733,40 +756,57 @@ def horizontal_lines_to_vertical_edges(
     """
     # Find words that share the same left, right, or centerpoints
     
-    horizontal_lines = filter(lambda x: x['orientation'] == 'h' and x['width'] > 20, edges)
-    sorted_lines = list(sorted(list(horizontal_lines), key=itemgetter("y0")))
-
-    min_x0 = min(list(map(itemgetter('x0'), sorted_lines)))
-    max_x1 = max(list(map(itemgetter('x1'), sorted_lines)))
-    min_top = min(list(map(itemgetter('top'), sorted_lines)))
-    max_bottom = max(list(map(itemgetter('top'), sorted_lines)))
-
-    word_edges = words_to_edges_v(words, word_threshold=int(len(list(sorted_lines)) * 0.8), word_attributes_to_cluster=['x0'])
     
-    return [
-        {
-            "x0": min_x0,
-            "x1": min_x0,
-            "top": min_top,
-            "bottom": max_bottom,
-            "height": max_bottom - min_top,
-            "orientation": "v",
-        },
-        {
-            "x0": max_x1,
-            "x1": max_x1,
-            "top": min_top,
-            "bottom": max_bottom,
-            "height": max_bottom - min_top,
-            "orientation": "v",
-        }
-    ] + [
-    {
-        "x0": word_edge["x1"],
-        "x1": word_edge["x1"],
-        "top": word_edge["top"],
-        "bottom": word_edge["bottom"],
-        "height": word_edge["height"],
-        "orientation": word_edge["orientation"],
-    }
-    for word_edge in word_edges]
+    horizontal_lines = list(filter(lambda x: x['orientation'] == 'h' and x['width'] > 20, edges))
+    sorted_lines = list(sorted(horizontal_lines, key=itemgetter("top")))
+    by_top = utils.cluster_objects(sorted_lines, itemgetter('top'), 3)
+    # pp.pprint(by_top[0])
+    x = list(map(lambda cluster: join_edge_group(cluster, 'h', 2), by_top))
+    # pp.pprint(x)
+    merged_lines = list(itertools.chain(*x))
+    # pp.pprint(merged_lines)
+    by_x0 = utils.cluster_objects(merged_lines, itemgetter('x0'), 3)
+    vertical_edges = []
+
+
+    for cluster in by_x0:
+        by_x1 = utils.cluster_objects(cluster, itemgetter('x1'), 3)
+        for x1_cluster in by_x1:
+            if len(x1_cluster) > 1:
+                min_x0 = min(list(map(itemgetter('x0'), x1_cluster)))
+                max_x1 = max(list(map(itemgetter('x1'), x1_cluster)))
+                min_top = min(list(map(itemgetter('top'), x1_cluster)))
+                max_bottom = max(list(map(itemgetter('top'), x1_cluster)))
+                vertical_edges.append({
+                    "x0": min_x0,
+                    "x1": min_x0,
+                    "top": min_top,
+                    "bottom": max_bottom,
+                    "height": max_bottom - min_top,
+                    "orientation": "v",
+                })
+                vertical_edges.append({
+                    "x0": max_x1,
+                    "x1": max_x1,
+                    "top": min_top,
+                    "bottom": max_bottom,
+                    "height": max_bottom - min_top,
+                    "orientation": "v",
+                })
+
+    # ensure at least this many words line up (based on number of horiz. lines)
+    word_threshold = int(min(list(map(lambda cluster: len(cluster), by_x0))) * 0.8)
+    word_edges = words_to_edges_v(words, word_threshold=word_threshold)
+    for word_edge in word_edges:
+        vertical_edges.append({
+            "x0": word_edge["x1"],
+            "x1": word_edge["x1"],
+            "top": word_edge["top"],
+            "bottom": word_edge["bottom"],
+            "height": word_edge["height"],
+            "orientation": word_edge["orientation"],
+        })
+
+    # by_width = utils.cluster_objects(sorted_lines, itemgetter('width'), 3)
+
+    return vertical_edges
