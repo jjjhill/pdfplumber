@@ -457,7 +457,6 @@ class Table(object):
 
                 # This is to avoid interpreting a single-column row as a merged cell, as requested by client.
                 should_merge_cells = num_cells_with_bboxes > 1
-
                 if cell is None or len(cell_chars) == 0:
                     if should_merge_cells:
                         if row_index == 0 and cell_index == 0:
@@ -470,9 +469,9 @@ class Table(object):
                             cell_text = table_arr[row_index - 1][cell_index]
                         else:
                             left_cell = cell_arr[cell_index - 1]
-                            print(table_cell_arr)
-                            print(row_index)
-                            print(cell_index)
+                            # print(table_cell_arr)
+                            # print(row_index)
+                            # print(cell_index)
                             up_cell = table_cell_arr[row_index - 1][cell_index]
                             # row merge, get from left
                             if left_cell is None and up_cell is None:
