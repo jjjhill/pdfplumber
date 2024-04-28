@@ -146,7 +146,7 @@ def words_to_edges_h(
 
 
 def words_to_edges_v(
-    words: T_obj_list, word_threshold: int = DEFAULT_MIN_WORDS_VERTICAL, word_attributes_to_cluster = ['x0']
+    words: T_obj_list, word_threshold: int = DEFAULT_MIN_WORDS_VERTICAL, word_attributes_to_cluster = []
 ) -> T_obj_list:
     """
     Find (imaginary) vertical lines that connect the left, right, or
@@ -429,6 +429,18 @@ class Table(object):
         table_arr = []
         table_cell_arr = []
 
+        def cell_is_full_width(cell_bbox):
+            table_bbox = self.bbox
+            cell_width = cell_bbox[2] - cell_bbox[0]
+            table_width = table_bbox[2] - table_bbox[0]
+
+            # within tolerance of 5px
+            return abs(cell_width - table_width) < 5
+        
+        def is_title_row(row):
+            # print(row)
+            return row[0] is not None and all(cell is None for cell in row[1:]) and cell_is_full_width(row[0])
+
         def char_in_bbox(char: T_obj, bbox: T_bbox) -> bool:
             v_mid = (char["top"] + char["bottom"]) / 2
             h_mid = (char["x0"] + char["x1"]) / 2
@@ -442,21 +454,13 @@ class Table(object):
             cell_arr = []
             row_chars = [char for char in chars if char_in_bbox(char, row.bbox)]
 
-            num_cells_with_bboxes = len(list(filter(lambda cell: cell is not None, row.cells)))
-
-            # if len(num_cells_with_bboxes) == 1:
-            #     row_text = char_array_to_text(row_chars, row.bbox, **kwargs)
-            #     arr.append(row_text)
-            #     for cell_bbox in row.cells:
-            #         cell_arr.append(num_cells_with_bboxes[0])
-            # else:
             for cell_index, cell in enumerate(row.cells):
                 cell_chars=[]
                 if cell is not None:
                     cell_chars = [char for char in chars if char_in_bbox(char, cell)]
 
                 # This is to avoid interpreting a single-column row as a merged cell, as requested by client.
-                should_merge_cells = num_cells_with_bboxes > 1
+                should_merge_cells = not is_title_row(row.cells)
                 if cell is None or len(cell_chars) == 0:
                     if should_merge_cells:
                         if row_index == 0 and cell_index == 0:
