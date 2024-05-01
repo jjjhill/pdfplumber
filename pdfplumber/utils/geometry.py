@@ -275,3 +275,25 @@ def filter_edges(
         return bool(et_correct and orient_correct and (e[dim] >= min_length))
 
     return list(filter(test, edges))
+
+def merge_edges(
+    edges
+):
+    if not edges:
+        return []
+
+    edges.sort(key=lambda x: x['x0'])  # Sort edges based on their x0 coordinate
+    merged_edges = [edges[0]]
+
+    for segment in edges[1:]:
+        last_merged_segment = merged_edges[-1]
+
+        # If the start of the current segment is within the last merged segment
+        if segment['x0'] <= last_merged_segment['x1']:
+            # Merge the edges
+            last_merged_segment['x1'] = max(last_merged_segment['x1'], segment['x1'])
+        else:
+            # Add the current segment to the list of merged edges
+            merged_edges.append(segment)
+
+    return merged_edges
